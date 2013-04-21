@@ -1,12 +1,14 @@
 name:                heredoc
-version:             0.1.0.0
+version:             0.1.0.1
 synopsis:            multi-line string / here document using QuasiQuotes
+description:         multi-line string / here document using QuasiQuotes
 
 license:             PublicDomain
 license-file:        LICENSE.txt
 
 author:              James H. Fisher
 maintainer:          jameshfisher@gmail.com
+homepage:            http://hackage.haskell.org/package/heredoc
 
 category:            Text
 
