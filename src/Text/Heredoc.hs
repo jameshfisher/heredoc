@@ -1,12 +1,42 @@
-module Text.Heredoc (here, there, str) where
+{-# LANGUAGE TemplateHaskell, QuasiQuotes #-}
 
+module Text.Heredoc
+  ( here
+  , there
+  , str
+  , Bindable
+    ( bind
+    )
+  ) where
+
+import Control.Applicative
+  ( (<$>)
+  , (<*)
+  , (*>)
+  , (<|>))
+import Text.Parsec
+  ( parse
+  , try
+  , eof
+  , newline
+  , many
+  , many1
+  , noneOf
+  , char
+  )
+import Text.Parsec.String (Parser)
 import Data.Maybe (fromMaybe)
 import Data.List (intercalate)
 import Language.Haskell.TH
   ( litE
   , stringL
+  , listE
+  , appE
+  , varE
+  , stringE
+  , mkName
+  , ExpQ
   )
-
 import Language.Haskell.TH.Quote
   ( QuasiQuoter
     ( QuasiQuoter
@@ -17,6 +47,8 @@ import Language.Haskell.TH.Quote
     )
   , quoteFile
   )
+
+import Text.Heredoc.Bindable
 
 data Ctx = Exp | Pat | Type | Dec
 
@@ -39,6 +71,39 @@ qq qqName correctCtx = QuasiQuoter
       Type -> "a type"
       Dec  -> "a declaration"
 
+skipNL :: String -> String
+skipNL []       = []
+skipNL str@(x:xs)
+    | x == '\n' = xs
+    | otherwise = str
+
+parser :: String -> ExpQ
+parser = f . parse binding "binding"
+  where
+    f (Left err) = fail (show err)
+    f (Right xs) = xs
+
+binding :: Parser ExpQ
+binding = appE (varE 'concat) . listE <$> many content <* eof
+
+content :: Parser ExpQ
+content = try value
+    <|> try (stringE . (:[]) <$> escape)
+    <|> stringE <$> text
+
+value :: Parser ExpQ
+value = do
+    char '$'
+    char '{'
+    str <- many (noneOf "}")
+    char '}'
+    return [|bind $(varE (mkName str))|]
+
+escape :: Parser Char
+escape = char '$' *> char '$'
+
+text :: Parser String
+text = many1 (noneOf "$")
 
 toUnix :: String -> String
 toUnix cs = case cs of
@@ -50,9 +115,24 @@ toUnix cs = case cs of
 {-| Create a string-literal expression from the string being quoted.
 
     Newline literals are normalized to UNIX newlines (one '\n' character).
+
+    It is possible to bind the valiable.
+
+    >>> :set -XQuasiQuotes
+    >>> let name = "Eli" :: String
+    >>> [here|Her name is ${name}.|]
+    "Her name is Eli."
+    >>> let num = 9 :: Int
+    >>> [here|This group contains ${num} members.|]
+    "This group contains 9 members."
+    >>> [here|$$12|]
+    "$12"
 -}
 here :: QuasiQuoter
-here = (qq "here" Exp) { quoteExp  = litE . stringL . toUnix }
+here = here' skipNL
+
+here' :: (String -> String) -> QuasiQuoter
+here' f = (qq "here" Exp) { quoteExp  = parser . f . toUnix }
 
 {-| Create a string-literal expression from
     the contents of the file at the filepath being quoted.
@@ -60,7 +140,7 @@ here = (qq "here" Exp) { quoteExp  = litE . stringL . toUnix }
     Newline literals are normalized to UNIX newlines (one '\n' character).
 -}
 there :: QuasiQuoter
-there = quoteFile here
+there = quoteFile (here' id)
 
 {-| Create a multi-line string literal whose left edge is demarcated by the
     "pipe" character ('|'). For example,
@@ -97,7 +177,7 @@ there = quoteFile here
 -}
 str :: QuasiQuoter
 str = (qq "str" Exp)
-      { quoteExp = litE . stringL . intercalate "\n" . unPipe . lines . toUnix }
+      { quoteExp = parser . intercalate "\n" . unPipe . lines . toUnix }
   where
     unPipe ls = case ls of
       []     -> []

@@ -17,7 +17,17 @@ cabal-version:       >=1.8
 
 library
   exposed-modules:   Text.Heredoc
+  other-modules:     Text.Heredoc.Bindable
   build-depends:
     base >= 4 && < 5,
-    template-haskell >= 2.5
+    template-haskell >= 2.5,
+    parsec
   hs-source-dirs:    src
+
+test-suite doctest
+  type:              exitcode-stdio-1.0
+  hs-source-dirs:    test
+  main-is:           Doctest.hs
+  build-depends:
+    base >= 4 && < 5,
+    doctest
